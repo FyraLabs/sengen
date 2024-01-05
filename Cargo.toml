@@ -1,0 +1,22 @@
+[package]
+name = "sengen"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+categories = ["server-app", "chat", "database", "web"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+actix-web = { version = "4.4.1", features = ["rustls"] }
+clap = "4.4.13"
+color-eyre = "0.6.2"
+futures = "0.3.30"
+serde = { version = "1.0.194", features = ["derive"] }
+serde_json = "1.0.111"
+surrealdb = "1.0.2"
+thiserror = "1.0.56"
+tokio = { version = "1.35.1", features = ["full"] }
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["tracing"] }
+xml_serde = "1.4.1"
