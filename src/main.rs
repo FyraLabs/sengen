@@ -1,15 +1,19 @@
+use crate::db::User;
+
 mod db;
 mod dbconn;
 
 #[tokio::main]
 async fn main() -> color_eyre::Result<()> {
     dotenvy::dotenv().ok();
-    let surrealdb = &dbconn::get_conn().await?.surrealdb;
+    dbconn::init_db().await?;
+    let db = dbconn::DB.clone();
 
+    let user = User::new("test".to_string(), None);
 
-    let health = surrealdb.health();
+    user.save().await?;
 
-    println!("{:?}", health.await?);
+    println!("{:?}", user);
 
     Ok(())
 }

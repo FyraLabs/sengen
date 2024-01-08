@@ -5,12 +5,7 @@ use surrealdb::sql::Thing;
 use surrealdb::Surreal;
 use uuid::Uuid;
 
-#[derive(Serialize, Deserialize)]
-struct User {
-    pub id: Uuid,
-    pub username: String,
-    pub nickname: Option<String>,
-}
+use crate::dbconn::DB;
 
 #[derive(Debug, Deserialize)]
 struct Record {
@@ -18,15 +13,16 @@ struct Record {
     id: Thing,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct User {
+    pub username: String,
+    pub nickname: Option<String>,
+}
+
 impl User {
     pub fn new(username: String, nickname: Option<String>) -> Self {
-        Self {
-            id: Uuid::new_v4(),
-            username,
-            nickname,
-        }
+        Self { username, nickname }
     }
-
 
     pub fn get_display_name(&self) -> String {
         match &self.nickname {
@@ -34,5 +30,22 @@ impl User {
             None => self.username.clone(),
         }
     }
-}
 
+    pub fn get_username(&self) -> String {
+        self.username.clone()
+    }
+
+    pub async fn save(&self) -> color_eyre::Result<()> {
+        let db = DB.clone();
+
+        // get user by username if exists
+        // wtf how does surreal select by field
+        let record: Option<User> = db.select(("users", "username")).await?;
+
+        let user: Vec<Self> = db.create("users").content(self).await?;
+
+        tracing::info!("{:?}", user);
+
+        Ok(())
+    }
+}
