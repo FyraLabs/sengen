@@ -1,3 +1,4 @@
+
 use serde::{Deserialize, Serialize};
 use surrealdb::engine::remote::ws::Ws;
 use surrealdb::opt::auth::Root;
@@ -6,12 +7,6 @@ use surrealdb::Surreal;
 use uuid::Uuid;
 
 use crate::dbconn::DB;
-
-#[derive(Debug, Deserialize)]
-struct Record {
-    #[allow(dead_code)]
-    id: Thing,
-}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct User {
@@ -22,6 +17,19 @@ pub struct User {
 impl User {
     pub fn new(username: String, nickname: Option<String>) -> Self {
         Self { username, nickname }
+    }
+
+    pub async fn create_user(username: String) -> Self {
+        let user = Self {
+            username,
+            nickname: None,
+        };
+
+        let db = DB.clone();
+
+        let user: Vec<Self> db.create(("users", uuid::Uuid::new_v4().to_string())).content(&user).await?;
+
+        user
     }
 
     pub fn get_display_name(&self) -> String {
@@ -47,5 +55,13 @@ impl User {
         tracing::info!("{:?}", user);
 
         Ok(())
+    }
+
+    pub async fn get_by_username(username: String) -> color_eyre::Result<Option<Self>> {
+        let db = DB.clone();
+
+        let record: Option<Self> = db.select(("users", username)).await?;
+
+        Ok(record)
     }
 }

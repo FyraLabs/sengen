@@ -18,6 +18,8 @@ rand = "0.8.5"
 serde = { version = "1.0.194", features = ["derive"] }
 serde_json = "1.0.111"
 socketioxide = { version = "0.10.0", features = ["tracing"] }
+surreal-id = "0.2.1"
+# surreal-simple-querybuilder = "0.7.0"
 surrealdb = "1.0.2"
 thiserror = "1.0.56"
 tokio = { version = "1.35.1", features = ["full"] }
