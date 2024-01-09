@@ -11,7 +11,7 @@ use crate::dbconn::DB;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct UserId {
-    pub id: Thing,
+    id: Thing,
 }
 
 impl UserId {
@@ -28,6 +28,10 @@ impl UserId {
 
     pub async fn get_by_id(id: String) -> color_eyre::Result<Option<Self>> {
         Ok(DB.select(("users", id)).await?)
+    }
+
+    pub fn id(&self) -> String {
+        self.id.id.to_string()
     }
 }
 
@@ -64,10 +68,8 @@ impl User {
 
         let user_id = match existing_user {
             Some(user_id) => {
-                let user: Option<UserId> = db
-                    .update(("users", user_id.id.id))
-                    .content(&self)
-                    .await?;
+                let user: Option<UserId> =
+                    db.update(("users", user_id.id())).content(&self).await?;
 
                 user.ok_or_eyre("User not updated")?
             }
