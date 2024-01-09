@@ -19,7 +19,7 @@ impl UserId {
         let db = DB.clone();
 
         let mut result = db
-            .query("SELECT * FROM users where USERNAME = $name")
+            .query("SELECT * FROM users WHERE username = $name")
             .bind(("name", username))
             .await?;
 
@@ -81,7 +81,7 @@ impl User {
         let user_id = match existing_user {
             Some(user_id) => {
                 let user: Option<UserId> = db
-                    .update(("users", user_id.id.to_string()))
+                    .update(("users", user_id.id.id))
                     .content(&self)
                     .await?;
 
