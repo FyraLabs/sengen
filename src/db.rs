@@ -1,4 +1,5 @@
-
+use color_eyre::eyre::{anyhow, OptionExt};
+use color_eyre::Result;
 use serde::{Deserialize, Serialize};
 use surrealdb::engine::remote::ws::Ws;
 use surrealdb::opt::auth::Root;
@@ -7,6 +8,28 @@ use surrealdb::Surreal;
 use uuid::Uuid;
 
 use crate::dbconn::DB;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct UserId {
+    pub id: Thing,
+}
+
+impl UserId {
+    pub async fn get_by_username(username: String) -> color_eyre::Result<Option<Self>> {
+        let db = DB.clone();
+
+        let mut result = db
+            .query("SELECT * FROM users where USERNAME = $name")
+            .bind(("name", username))
+            .await?;
+
+        Ok(result.take(0)?)
+    }
+
+    pub async fn get_by_id(id: String) -> color_eyre::Result<Option<Self>> {
+        Ok(DB.select(("users", id)).await?)
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct User {
@@ -19,7 +42,7 @@ impl User {
         Self { username, nickname }
     }
 
-    pub async fn create_user(username: String) -> Self {
+    pub async fn create_user(username: String) -> Result<Self> {
         let user = Self {
             username,
             nickname: None,
@@ -27,9 +50,12 @@ impl User {
 
         let db = DB.clone();
 
-        let user: Vec<Self> db.create(("users", uuid::Uuid::new_v4().to_string())).content(&user).await?;
+        let user: Option<Self> = db
+            .create(("users", uuid::Uuid::new_v4().to_string()))
+            .content(&user)
+            .await?;
 
-        user
+        user.ok_or_else(|| anyhow!("User not created"))
     }
 
     pub fn get_display_name(&self) -> String {
@@ -43,25 +69,31 @@ impl User {
         self.username.clone()
     }
 
-    pub async fn save(&self) -> color_eyre::Result<()> {
+    pub async fn save(&self) -> color_eyre::Result<UserId> {
         let db = DB.clone();
 
-        // get user by username if exists
-        // wtf how does surreal select by field
-        let record: Option<User> = db.select(("users", "username")).await?;
+        // get user by username if exists, then update
 
-        let user: Vec<Self> = db.create("users").content(self).await?;
+        let existing_user = UserId::get_by_username(self.username.clone()).await?;
 
-        tracing::info!("{:?}", user);
+        tracing::info!("Existing user: {:?}", existing_user);
 
-        Ok(())
-    }
+        let user_id = match existing_user {
+            Some(user_id) => {
+                let user: Option<UserId> = db
+                    .update(("users", user_id.id.to_string()))
+                    .content(&self)
+                    .await?;
 
-    pub async fn get_by_username(username: String) -> color_eyre::Result<Option<Self>> {
-        let db = DB.clone();
+                user.ok_or_eyre("User not updated")?
+            }
+            None => {
+                let user: Vec<UserId> = db.create("users").content(&self).await?;
 
-        let record: Option<Self> = db.select(("users", username)).await?;
+                user.iter().next().ok_or_eyre("User not created")?.clone()
+            }
+        };
 
-        Ok(record)
+        Ok(user_id)
     }
 }

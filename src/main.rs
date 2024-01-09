@@ -9,7 +9,9 @@ async fn main() -> color_eyre::Result<()> {
     dbconn::init_db().await?;
     let db = dbconn::DB.clone();
 
-    let user = User::get_by_username("test".to_string()).await?;
+    let user = User::new("test".to_string(), None);
+
+    user.save().await?;
 
     println!("{:?}", user);
 
