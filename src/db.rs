@@ -42,22 +42,6 @@ impl User {
         Self { username, nickname }
     }
 
-    pub async fn create_user(username: String) -> Result<Self> {
-        let user = Self {
-            username,
-            nickname: None,
-        };
-
-        let db = DB.clone();
-
-        let user: Option<Self> = db
-            .create(("users", uuid::Uuid::new_v4().to_string()))
-            .content(&user)
-            .await?;
-
-        user.ok_or_else(|| anyhow!("User not created"))
-    }
-
     pub fn get_display_name(&self) -> String {
         match &self.nickname {
             Some(nickname) => nickname.clone(),
