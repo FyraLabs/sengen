@@ -10,7 +10,7 @@ async fn main() -> color_eyre::Result<()> {
 
     let mut user = User::new("test".to_string(), None);
 
-    user.save().await?;
+    let user = user.save().await?;
 
     println!("{:?}", user);
 
