@@ -1,4 +1,4 @@
-use crate::db::{ChannelId, Message, User, MessageId};
+use crate::db::{Channel, Message, User};
 mod db;
 mod dbconn;
 
@@ -6,19 +6,31 @@ mod dbconn;
 
 async fn main() -> color_eyre::Result<()> {
     // tracing subscriber
-    tracing_subscriber::fmt::fmt().init();
     dotenvy::dotenv().ok();
+    tracing_subscriber::fmt::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
     dbconn::init_db().await?;
 
-    let user = User::new("test".to_string(), None).save().await?;
+    tracing::debug!("Starting");
 
-    let channel = ChannelId::new_channel("test".to_string()).await?;
+    let user = if let Some(user) = User::get_by_username("test".to_string()).await {
+        user
+    } else {
+        User::new("test".to_string(), None).save().await?
+    };
+
+    user.save().await?;
+
+    let channel = Channel::new("test".to_string()).create().await?;
 
     println!("{:?}", user);
 
-    let msg = MessageId::new_message(user.id(), "Hello, World!".to_string(), channel.id()).await?;
+    let msg = Message::new("Hello World!".to_string(), &channel)
+        .send(user.id.clone())
+        .await?;
 
-    println!("{:?}", msg.message().await);
+    println!("{:?}", msg);
 
     // Deleted messages will be dropped from the database
 
@@ -27,10 +39,7 @@ async fn main() -> color_eyre::Result<()> {
     msg.reply(user.id(), "Hello world to you too!".to_string())
         .await?;
 
-    
-    let messages = channel.get_messages_id().await?;
-    println!("{:?}", messages);
-
+ 
     let messages = channel.get_messages().await?;
 
     println!("{:?}", messages);
