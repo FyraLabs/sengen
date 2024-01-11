@@ -247,6 +247,95 @@ impl Message {
 
         Ok(new_message)
     }
+
+    /// Get the message this message was replied from
+    #[tracing::instrument]
+    pub async fn replied_from(&self) -> color_eyre::Result<Option<Self>> {
+        let db = DB.clone();
+
+        let result: Option<Message> = db
+            .query(format!(
+                "RETURN (SELECT * FROM reply_to WHERE out = messages:{id}).in FETCH in",
+                id = self.id()
+            ))
+            .await?
+            .take(0)?;
+
+        Ok(result)
+    }
+
+    #[tracing::instrument]
+    pub async fn get_replies(&self) -> color_eyre::Result<Vec<Self>> {
+        let db = DB.clone();
+
+        let result: Vec<Message> = db
+            .query(format!(
+                "RETURN (SELECT * FROM reply_to WHERE in = messages:{id}).out FETCH out",
+                id = self.id()
+            ))
+            .await?
+            .take(0)?;
+
+        Ok(result)
+    }
+
+    #[tracing::instrument]
+    pub async fn delete(self) -> Result<()> {
+        let db = DB.clone();
+
+        let _result: Self = db
+            .delete(("messages", self.clone().id.0.id))
+            .await?
+            .ok_or_eyre("Unable to delete message")?;
+
+        Ok(())
+    }
+
+    #[tracing::instrument]
+    pub async fn get_channel(&self) -> color_eyre::Result<Channel> {
+        let db = DB.clone();
+
+        let result: Option<Channel> = db
+            .query(format!(
+                "RETURN (SELECT * FROM sent_in_channel WHERE in = messages:{id}).out FETCH out",
+                id = self.id()
+            ))
+            .await?
+            .take(0)?;
+
+        Ok(result.ok_or_eyre("Channel not found!?")?)
+    }
+
+    #[tracing::instrument]
+    pub async fn get_sender(&self) -> color_eyre::Result<User> {
+        let db = DB.clone();
+
+        let result: Option<User> = db
+            .query(format!(
+                "RETURN (SELECT * FROM sent_by WHERE in = messages:{id}).out FETCH out",
+                id = self.id()
+            ))
+            .await?
+            .take(0)?;
+
+        Ok(result.ok_or_eyre("User not found!?")?)
+    }
+
+    /// Get the time this message was sent
+    #[tracing::instrument]
+    pub async fn get_time_sent(&self) -> color_eyre::Result<chrono::DateTime<chrono::Utc>> {
+        let db = DB.clone();
+
+        let result: Option<chrono::DateTime<chrono::Utc>> = db
+            .query(format!(
+                "RETURN (SELECT * FROM sent_by WHERE in = messages:{id}).time.sent FETCH time.sent",
+                id = self.id()
+            ))
+            .await?
+            .take(0)?;
+
+        Ok(result.ok_or_eyre("Time not found!?")?)
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
