@@ -15,23 +15,38 @@ pub struct UserId {
 }
 
 impl UserId {
-    pub async fn get_by_username(username: String) -> color_eyre::Result<Option<Self>> {
+    #[tracing::instrument]
+    pub async fn get_by_username(username: String) -> Option<Self> {
         let db = DB.clone();
 
         let mut result = db
             .query("SELECT * FROM users WHERE username = $name")
             .bind(("name", username))
-            .await?;
+            .await
+            .ok()?;
 
-        Ok(result.take(0)?)
+        result.take(0).unwrap()
     }
 
+    #[tracing::instrument]
     pub async fn get_by_id(id: String) -> color_eyre::Result<Option<Self>> {
         Ok(DB.select(("users", id)).await?)
     }
 
+    #[tracing::instrument]
     pub fn id(&self) -> String {
         self.id.id.to_string()
+    }
+
+    // Get inner user
+
+    #[tracing::instrument]
+    pub async fn user(&self) -> Option<User> {
+        let db = DB.clone();
+
+        let result: Option<User> = db.select(("users", self.id().clone())).await.ok()?;
+
+        result
     }
 }
 
@@ -62,7 +77,7 @@ impl User {
 
         // get user by username if exists, then update
 
-        let existing_user = UserId::get_by_username(self.username.clone()).await?;
+        let existing_user = UserId::get_by_username(self.username.clone()).await;
 
         tracing::info!("Existing user: {:?}", existing_user);
 
@@ -84,5 +99,113 @@ impl User {
         };
 
         Ok(user_id)
+    }
+
+    #[tracing::instrument]
+    pub async fn get_by_username(username: String) -> color_eyre::Result<Option<Self>> {
+        let db = DB.clone();
+
+        let mut result = db
+            .query("SELECT * FROM users WHERE username = $name")
+            .bind(("name", username))
+            .await?;
+
+        Ok(result.take(0)?)
+    }
+
+    #[tracing::instrument]
+    pub async fn get_by_id(id: String) -> color_eyre::Result<Option<Self>> {
+        Ok(DB.select(("users", id)).await?)
+    }
+
+    #[tracing::instrument]
+    pub async fn delete(&self) -> Result<()> {
+        let db = DB.clone();
+
+        if let Some(user_id) = UserId::get_by_username(self.username.clone()).await {
+            let result: Option<User> = db
+                .delete(("users", user_id.id()))
+                .await?
+                .ok_or_eyre("User not found")?;
+
+            // this function will drop user from memory
+
+            drop(result);
+        }
+
+        Ok(())
+    }
+
+    pub async fn id(&self) -> Option<UserId> {
+        let result = UserId::get_by_username(self.username.clone()).await;
+        result
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MessageId {
+    id: Thing,
+}
+
+impl MessageId {
+    pub async fn new_message(user_id: String, content: String) -> color_eyre::Result<Self> {
+        let db = DB.clone();
+
+        let message_id = db
+            .create((
+                "messages",
+                ulid::Generator::default().generate()?.to_string(),
+            ))
+            .content(&Message { user_id, content })
+            .await?;
+
+        Ok(message_id.ok_or_eyre("Message not created")?)
+    }
+    pub async fn get_by_id(id: String) -> color_eyre::Result<Option<Self>> {
+        Ok(DB.select(("messages", id)).await?)
+    }
+
+    pub fn id(&self) -> String {
+        self.id.id.to_string()
+    }
+
+    pub async fn message(&self) -> Option<Message> {
+        let db = DB.clone();
+
+        let result: Option<Message> = db.select(("messages", self.id().clone())).await.ok()?;
+
+        result
+    }
+
+    pub async fn delete(self) -> Result<()> {
+        let db = DB.clone();
+
+        if let Some(message_id) = MessageId::get_by_id(self.id()).await? {
+            let result: Option<Message> = db
+                .delete(("messages", message_id.id()))
+                .await?
+                .ok_or_eyre("Message not found")?;
+
+            // this function will drop message from memory
+
+            drop(result);
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Message {
+    pub user_id: String,
+    pub content: String,
+}
+
+impl Message {
+    /// Sends a message to a user
+    ///
+    /// Redirects to `MessageId::new_message`
+    pub async fn send_message(user_id: String, content: String) -> color_eyre::Result<MessageId> {
+        MessageId::new_message(user_id, content).await
     }
 }
