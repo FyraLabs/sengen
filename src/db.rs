@@ -150,14 +150,16 @@ pub struct MessageId {
 impl MessageId {
     pub async fn new_message(user_id: String, content: String) -> color_eyre::Result<Self> {
         let db = DB.clone();
-
-        let message_id = db
-            .create((
-                "messages",
-                ulid::Generator::default().generate()?.to_string(),
-            ))
-            .content(&Message { user_id, content })
+        let ulid = ulid::Generator::default().generate()?.to_string();
+        let message_id: Option<Self> = db
+            .create(("messages", ulid.clone()))
+            .content(&Message { content })
             .await?;
+
+        db.query(format!(
+            "RELATE messages:{ulid}->sent_by->users:{user_id} SET time.sent = time::now() PARALLEL",
+        ))
+        .await?;
 
         Ok(message_id.ok_or_eyre("Message not created")?)
     }
@@ -193,11 +195,32 @@ impl MessageId {
 
         Ok(())
     }
+
+    pub async fn get_all() -> color_eyre::Result<Vec<Self>> {
+        let db = DB.clone();
+
+        let mut result = db.query("SELECT * FROM messages").await?;
+
+        Ok(result.take(0)?)
+    }
+
+    pub async fn reply(&self, user_id: String, content: String) -> color_eyre::Result<Self> {
+        let db = DB.clone();
+        let message_id = Self::new_message(user_id, content).await?;
+
+        db.query(format!(
+            "RELATE messages:{reply_id}->reply_to->messages:{message_id} PARALLEL",
+            reply_id = message_id.id(),
+            message_id = self.id()
+        ))
+        .await?;
+
+        Ok(message_id)
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Message {
-    pub user_id: String,
     pub content: String,
 }
 
@@ -207,5 +230,20 @@ impl Message {
     /// Redirects to `MessageId::new_message`
     pub async fn send_message(user_id: String, content: String) -> color_eyre::Result<MessageId> {
         MessageId::new_message(user_id, content).await
+    }
+
+    pub async fn get_by_id(id: String) -> color_eyre::Result<Option<Self>> {
+        Ok(DB.select(("messages", id)).await?)
+    }
+
+    pub async fn id(&self) -> Option<MessageId> {
+        let result: Result<Option<MessageId>> = MessageId::get_by_id(self.content.clone()).await;
+        result.ok()?
+    }
+
+    pub async fn reply(&self, user_id: String, content: String) -> color_eyre::Result<MessageId> {
+        let id = self.id().await.ok_or_eyre("Message not found")?;
+
+        id.reply(user_id, content).await
     }
 }

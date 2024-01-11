@@ -5,7 +5,6 @@ mod dbconn;
 #[tokio::main]
 
 async fn main() -> color_eyre::Result<()> {
-
     // tracing subscriber
     tracing_subscriber::fmt::fmt().init();
     dotenvy::dotenv().ok();
@@ -21,7 +20,10 @@ async fn main() -> color_eyre::Result<()> {
 
     // Deleted messages will be dropped from the database
 
-    msg.delete().await?;
+    // msg.delete().await?;
+
+    msg.reply(user.id(), "Hello world to you too!".to_string())
+        .await?;
 
     Ok(())
 }
