@@ -74,7 +74,10 @@ impl User {
                 user.ok_or_eyre("User not updated")?
             }
             None => {
-                let user: Vec<UserId> = db.create("users").content(&self).await?;
+                let user: Option<UserId> = db
+                    .create(("users", ulid::Generator::default().generate()?.to_string()))
+                    .content(&self)
+                    .await?;
 
                 user.iter().next().ok_or_eyre("User not created")?.clone()
             }

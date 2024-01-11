@@ -6,7 +6,7 @@ It's designed to be an alternative to [escargot.chat](https://escargot.chat), wh
 
 ## Features
 
-Sengen is currently in very early development, and not even close to production ready. However, the following features are planned:
+Sengen is currently in very early development (in the experimental phase), and not even close to production ready. However, the following features are planned:
 
 - [ ] IRC support
 - [ ] XMPP support
