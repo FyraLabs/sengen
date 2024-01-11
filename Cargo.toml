@@ -20,7 +20,7 @@ serde = { version = "1.0.194", features = ["derive"] }
 serde_json = "1.0.111"
 socketioxide = { version = "0.10.0", features = ["tracing"] }
 surreal-id = "0.2.1"
-surrealdb = "1.0.2"
+surrealdb = { version = "1.1", features = ["protocol-http", "kv-tikv"] }
 thiserror = "1.0.56"
 tokio = { version = "1.35.1", features = ["full"] }
 tracing = "0.1.40"
