@@ -1,4 +1,4 @@
-use crate::db::{Message, User};
+use crate::db::{ChannelId, Message, User, MessageId};
 mod db;
 mod dbconn;
 
@@ -12,9 +12,11 @@ async fn main() -> color_eyre::Result<()> {
 
     let user = User::new("test".to_string(), None).save().await?;
 
+    let channel = ChannelId::new_channel("test".to_string()).await?;
+
     println!("{:?}", user);
 
-    let msg = Message::send_message(user.id(), "Hello, World!".to_string()).await?;
+    let msg = MessageId::new_message(user.id(), "Hello, World!".to_string(), channel.id()).await?;
 
     println!("{:?}", msg.message().await);
 
@@ -24,6 +26,10 @@ async fn main() -> color_eyre::Result<()> {
 
     msg.reply(user.id(), "Hello world to you too!".to_string())
         .await?;
+
+    let messages = channel.get_messages().await?;
+
+    println!("{:?}", messages);
 
     Ok(())
 }

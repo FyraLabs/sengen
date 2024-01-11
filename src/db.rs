@@ -148,7 +148,11 @@ pub struct MessageId {
 }
 
 impl MessageId {
-    pub async fn new_message(user_id: String, content: String) -> color_eyre::Result<Self> {
+    pub async fn new_message(
+        user_id: String,
+        content: String,
+        channel_id: String,
+    ) -> color_eyre::Result<Self> {
         let db = DB.clone();
         let ulid = ulid::Generator::default().generate()?.to_string();
         let message_id: Option<Self> = db
@@ -158,6 +162,11 @@ impl MessageId {
 
         db.query(format!(
             "RELATE messages:{ulid}->sent_by->users:{user_id} SET time.sent = time::now() PARALLEL",
+        ))
+        .await?;
+
+        db.query(format!(
+            "RELATE messages:{ulid}->sent_in_channel->channels:{channel_id} PARALLEL",
         ))
         .await?;
 
@@ -206,7 +215,27 @@ impl MessageId {
 
     pub async fn reply(&self, user_id: String, content: String) -> color_eyre::Result<Self> {
         let db = DB.clone();
-        let message_id = Self::new_message(user_id, content).await?;
+
+        let id = self.id();
+
+        // get channel id from message id
+
+        let channel_id: Option<ChannelId> = db
+            .query(format!(
+                "SELECT * FROM messages:{id}->sent_in_channel.out",
+                id = id
+            ))
+            .await?
+            .take(0)?;
+
+        let message_id = Self::new_message(
+            user_id,
+            content,
+            channel_id
+                .ok_or_eyre("Cannot get channel to reply in!")?
+                .id(),
+        )
+        .await?;
 
         db.query(format!(
             "RELATE messages:{reply_id}->reply_to->messages:{message_id} PARALLEL",
@@ -228,9 +257,9 @@ impl Message {
     /// Sends a message to a user
     ///
     /// Redirects to `MessageId::new_message`
-    pub async fn send_message(user_id: String, content: String) -> color_eyre::Result<MessageId> {
-        MessageId::new_message(user_id, content).await
-    }
+    // pub async fn send_message(user_id: String, content: String) -> color_eyre::Result<MessageId> {
+    //     MessageId::new_message(user_id, content).await
+    // }
 
     pub async fn get_by_id(id: String) -> color_eyre::Result<Option<Self>> {
         Ok(DB.select(("messages", id)).await?)
@@ -245,5 +274,137 @@ impl Message {
         let id = self.id().await.ok_or_eyre("Message not found")?;
 
         id.reply(user_id, content).await
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ChannelId {
+    id: Thing,
+}
+
+impl ChannelId {
+    pub async fn new_channel(name: String) -> color_eyre::Result<Self> {
+        let db = DB.clone();
+        let ulid = ulid::Generator::default().generate()?.to_string();
+        let channel_id: Option<Self> = db
+            .create(("channels", ulid.clone()))
+            .content(&Channel { name })
+            .await?;
+
+        Ok(channel_id.ok_or_eyre("Channel not created")?)
+    }
+    pub async fn get_by_id(id: String) -> color_eyre::Result<Option<Self>> {
+        Ok(DB.select(("channels", id)).await?)
+    }
+
+    pub fn id(&self) -> String {
+        self.id.id.to_string()
+    }
+
+    pub async fn channel(&self) -> Option<Channel> {
+        let db = DB.clone();
+
+        let result: Option<Channel> = db.select(("channels", self.id().clone())).await.ok()?;
+
+        result
+    }
+
+    pub async fn delete(self) -> Result<()> {
+        let db = DB.clone();
+
+        if let Some(channel_id) = ChannelId::get_by_id(self.id()).await? {
+            let result: Option<Channel> = db
+                .delete(("channels", channel_id.id()))
+                .await?
+                .ok_or_eyre("Channel not found")?;
+
+            // this function will drop channel from memory
+
+            drop(result);
+        }
+
+        Ok(())
+    }
+
+    pub async fn get_all() -> color_eyre::Result<Vec<Self>> {
+        let db = DB.clone();
+
+        let mut result = db.query("SELECT * FROM channels").await?;
+
+        Ok(result.take(0)?)
+    }
+
+    pub async fn get_messages(&self) -> color_eyre::Result<Vec<Message>> {
+        let db = DB.clone();
+
+        let mut result = db
+            .query(format!(
+                "SELECT * FROM channels:{id}<-sent_in_channel",
+                id = self.id()
+            ))
+            .await?;
+
+        Ok(result.take(0)?)
+    }
+
+    pub async fn get_messages_id(&self) -> color_eyre::Result<Vec<MessageId>> {
+        let db = DB.clone();
+
+        let mut result = db
+            .query(format!(
+                "SELECT * FROM channels:{id}<-sent_in_channel",
+                id = self.id()
+            ))
+            .await?;
+
+        Ok(result.take(0)?)
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Channel {
+    pub name: String,
+}
+
+impl Channel {
+    /// Creates a new channel
+    ///
+    /// Redirects to `ChannelId::new_channel`
+    pub async fn create_channel(name: String) -> color_eyre::Result<ChannelId> {
+        ChannelId::new_channel(name).await
+    }
+
+    pub async fn get_by_id(id: String) -> color_eyre::Result<Option<Self>> {
+        Ok(DB.select(("channels", id)).await?)
+    }
+
+    pub async fn id(&self) -> Option<ChannelId> {
+        let result: Result<Option<ChannelId>> = ChannelId::get_by_id(self.name.clone()).await;
+        result.ok()?
+    }
+
+    pub async fn delete(&self) -> Result<()> {
+        let db = DB.clone();
+
+        if let Some(channel_id) = ChannelId::get_by_id(self.name.clone()).await? {
+            let result: Option<Channel> = db
+                .delete(("channels", channel_id.id()))
+                .await?
+                .ok_or_eyre("Channel not found")?;
+
+            // this function will drop channel from memory
+
+            drop(result);
+        }
+
+        Ok(())
+    }
+
+    pub async fn get_all() -> color_eyre::Result<Vec<Self>> {
+        let db = DB.clone();
+
+        let mut result = db.query("SELECT * FROM channels").await?;
+
+        Ok(result.take(0)?)
     }
 }
