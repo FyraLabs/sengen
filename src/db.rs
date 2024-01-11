@@ -339,7 +339,7 @@ impl ChannelId {
 
         let mut result = db
             .query(format!(
-                "SELECT * FROM channels:{id}<-sent_in_channel",
+                "(SELECT <-sent_in_channel.in AS messages FROM channels:{id}).messages",
                 id = self.id()
             ))
             .await?;
