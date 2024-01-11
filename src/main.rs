@@ -27,6 +27,10 @@ async fn main() -> color_eyre::Result<()> {
     msg.reply(user.id(), "Hello world to you too!".to_string())
         .await?;
 
+    
+    let messages = channel.get_messages_id().await?;
+    println!("{:?}", messages);
+
     let messages = channel.get_messages().await?;
 
     println!("{:?}", messages);

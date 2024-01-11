@@ -1,13 +1,14 @@
+use crate::dbconn::DB;
 use color_eyre::eyre::{anyhow, OptionExt};
 use color_eyre::Result;
+use futures::future::try_join_all;
 use serde::{Deserialize, Serialize};
 use surrealdb::engine::remote::ws::Ws;
 use surrealdb::opt::auth::Root;
 use surrealdb::sql::Thing;
 use surrealdb::Surreal;
+use tracing::{debug, info};
 use uuid::Uuid;
-
-use crate::dbconn::DB;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct UserId {
@@ -337,16 +338,21 @@ impl ChannelId {
     pub async fn get_messages(&self) -> color_eyre::Result<Vec<Message>> {
         let db = DB.clone();
 
-        let mut result = db
-            .query(format!(
-                "SELECT channels:{id}<-sent_in_channel FROM messages",
-                id = self.id()
-            ))
-            .await?;
+        let msgids = self.get_messages_id().await?;
 
-        Ok(result.take(0)?)
+        let mut messages = Vec::new();
+
+        for msgid in msgids {
+            info!("Message ID: {:?}", msgid);
+            let msg = msgid.message().await.ok_or_eyre("Message not found")?;
+
+            messages.push(msg);
+        }
+
+        Ok(messages)
     }
 
+    #[tracing::instrument]
     pub async fn get_messages_id(&self) -> color_eyre::Result<Vec<MessageId>> {
         let db = DB.clone();
 
