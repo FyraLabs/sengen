@@ -223,7 +223,7 @@ impl Message {
 
         let channel = db
             .query(format!(
-                "SELECT out.id as id, out.name as name FROM sent_in_channel WHERE in = messages:{id} PARALLEL",
+                "RETURN (SELECT * FROM sent_in_channel WHERE in = messages:{id}).out FETCH out",
                 id = self.id()
             ))
             .await?
@@ -267,100 +267,6 @@ impl NewId for ChannelId {
     }
 }
 
-// impl ChannelId {
-//     #[tracing::instrument]
-//     pub async fn new_channel(name: String) -> color_eyre::Result<Self> {
-//         let db = DB.clone();
-//         let ulid = ulid::Generator::default().generate()?.to_string();
-//         let channel_id: Option<Self> = db
-//             .create(("channels", ulid.clone()))
-//             .content(&Channel { name })
-//             .await?;
-
-//         Ok(channel_id.ok_or_eyre("Channel not created")?)
-//     }
-
-//     #[tracing::instrument]
-//     pub async fn get_by_id(id: String) -> color_eyre::Result<Option<Self>> {
-//         Ok(DB.select(("channels", id)).await?)
-//     }
-
-//     #[tracing::instrument]
-//     pub fn id(&self) -> String {
-//         self.id.id.to_string()
-//     }
-
-//     #[tracing::instrument]
-//     pub async fn channel(&self) -> Option<Channel> {
-//         let db = DB.clone();
-
-//         let result: Option<Channel> = db.select(("channels", self.id().clone())).await.ok()?;
-
-//         result
-//     }
-
-//     #[tracing::instrument]
-//     pub async fn delete(self) -> Result<()> {
-//         let db = DB.clone();
-
-//         if let Some(channel_id) = ChannelId::get_by_id(self.id()).await? {
-//             //
-//             info!("Deleting messages in channel: {:?}", channel_id);
-
-//             db.query(format!(
-//                 "DELETE messages WHERE channel.id = channels:{id}",
-//                 id = channel_id.id()
-//             ))
-//             .await?;
-
-//             info!("Deleting channel: {:?}", channel_id);
-//             db.delete(("channels", channel_id.id()))
-//                 .await?
-//                 .ok_or_eyre("Channel not found")?;
-//         }
-
-//         Ok(())
-//     }
-
-//     #[tracing::instrument]
-//     pub async fn get_all() -> color_eyre::Result<Vec<Self>> {
-//         let db = DB.clone();
-
-//         let mut result = db.query("SELECT * FROM channels").await?;
-
-//         Ok(result.take(0)?)
-//     }
-
-//     #[tracing::instrument]
-//     pub async fn get_messages(&self) -> color_eyre::Result<Vec<Message>> {
-//         let db = DB.clone();
-
-//         let mut result = db
-//             .query(format!(
-//                 "SELECT * FROM messages WHERE channel.id = channels:{id}",
-//                 id = self.id()
-//             ))
-//             .bind(("id", self.id()))
-//             .await?;
-
-//         Ok(result.take(0)?)
-//     }
-
-//     #[tracing::instrument]
-//     pub async fn get_messages_id(&self) -> color_eyre::Result<Vec<MessageId>> {
-//         let db = DB.clone();
-
-//         let mut result = db
-//             .query(format!(
-//                 "SELECT * FROM messages WHERE channel.id = channels:{id}",
-//                 id = self.id()
-//             ))
-//             .await?;
-
-//         Ok(result.take(0)?)
-//     }
-// }
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Channel {
     pub id: ChannelId,
@@ -397,6 +303,19 @@ impl Channel {
         Ok(DB.select(("channels", id.to_string())).await?)
     }
 
+    #[tracing::instrument]
+    pub async fn get_by_name(name: String) -> color_eyre::Result<Option<Self>> {
+        let db = DB.clone();
+
+        let result: Option<Channel> = db
+            .query("SELECT * FROM channels WHERE name = $name")
+            .bind(("name", name))
+            .await?
+            .take(0)?;
+
+        Ok(result)
+    }
+
     pub fn id(&self) -> String {
         self.id.0.id.to_string()
     }
@@ -427,7 +346,7 @@ impl Channel {
                 let _ = &DB
                     .clone()
                     .query(format!(
-                        "DELETE messages WHERE channel.id = channels:{id}",
+                        "DELETE messages WHERE channel.id = channels:{id} PARALLEL",
                         id = channel_id
                     ))
                     .await
@@ -445,7 +364,7 @@ impl Channel {
         let mut result = db
             .query(format!(
                 r#"
-                SELECT in.content as content, in.id as id FROM sent_in_channel WHERE out = channels:{id}
+                RETURN (SELECT * FROM sent_in_channel WHERE out = channels:{id}).in FETCH in
                 "#,
                 id = self.id()
             ))

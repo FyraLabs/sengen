@@ -24,7 +24,13 @@ async fn main() -> color_eyre::Result<()> {
 
     user.save().await?;
 
-    let channel = Channel::new("test".to_string()).create().await?;
+    let channel = {
+        if let Some(channel) = Channel::get_by_name("test".to_string()).await? {
+            channel
+        } else {
+            Channel::new("test".to_string()).create().await?
+        }
+    };
 
     println!("{:?}", user);
 
