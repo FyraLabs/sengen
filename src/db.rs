@@ -158,7 +158,13 @@ impl MessageId {
         let ulid = ulid::Generator::default().generate()?.to_string();
         let message_id: Option<Self> = db
             .create(("messages", ulid.clone()))
-            .content(&Message { content })
+            .content(&Message {
+                content,
+                channel_id: ChannelId::get_by_id(channel_id.clone())
+                    .await
+                    .unwrap()
+                    .unwrap(),
+            })
             .await?;
 
         db.query(format!(
@@ -252,6 +258,7 @@ impl MessageId {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Message {
     pub content: String,
+    pub channel_id: ChannelId,
 }
 
 impl Message {
@@ -338,18 +345,15 @@ impl ChannelId {
     pub async fn get_messages(&self) -> color_eyre::Result<Vec<Message>> {
         let db = DB.clone();
 
-        let msgids = self.get_messages_id().await?;
+        let mut result = db
+            .query(format!(
+                "SELECT * FROM messages WHERE channel_id.id = channels:{id}",
+                id = self.id()
+            ))
+            .bind(("id", self.id()))
+            .await?;
 
-        let mut messages = Vec::new();
-
-        for msgid in msgids {
-            info!("Message ID: {:?}", msgid);
-            let msg = msgid.message().await.ok_or_eyre("Message not found")?;
-
-            messages.push(msg);
-        }
-
-        Ok(messages)
+        Ok(result.take(0)?)
     }
 
     #[tracing::instrument]
