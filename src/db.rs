@@ -2,6 +2,7 @@ use crate::dbconn::DB;
 use color_eyre::eyre::{anyhow, OptionExt};
 use color_eyre::Result;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use surreal_id::NewId;
 use surrealdb::opt::RecordId;
 use surrealdb::sql::Thing;
@@ -159,17 +160,15 @@ impl NewId for MessageId {
 pub struct Message {
     pub id: MessageId,
     pub content: String,
-    pub channel: Channel,
 }
 
 impl Message {
     #[tracing::instrument]
-    pub fn new(content: String, channel: &Channel) -> Self {
+    pub fn new(content: String) -> Self {
         let ulid = ulid();
 
         Self {
             content,
-            channel: channel.clone(),
             id: MessageId::new(ulid.to_string()).unwrap(),
         }
     }
@@ -179,7 +178,7 @@ impl Message {
     }
 
     #[tracing::instrument]
-    pub async fn send(&self, user_id: UserId) -> Result<Self> {
+    pub async fn send(&self, user_id: UserId, channel: Channel) -> Result<Self> {
         let db = DB.clone();
 
         let msgid = self.id.0.clone();
@@ -190,16 +189,16 @@ impl Message {
             .await?;
 
         db.query(format!(
-            "RELATE messages:{ulid}->sent_by->users:{user_id} SET time.sent = time::now() PARALLEL",
+            "RELATE ONLY messages:{ulid}->sent_by->users:{user_id} SET time.sent = time::now() PARALLEL",
             ulid = msgid.id,
             user_id = user_id.get_inner_string()
         ))
         .await?;
 
         db.query(format!(
-            "RELATE messages:{ulid}->sent_in_channel->channels:{channel_id} PARALLEL",
+            "RELATE ONLY messages:{ulid}->sent_in_channel->channels:{channel_id} PARALLEL",
             ulid = msgid.id,
-            channel_id = self.channel.id()
+            channel_id = channel.id()
         ))
         .await?;
 
@@ -220,8 +219,23 @@ impl Message {
     pub async fn reply(&self, user_id: String, content: String) -> color_eyre::Result<Self> {
         let db = DB.clone();
 
-        let new_message = Message::new(content, &self.channel)
-            .send(UserId::from_inner_id(user_id.clone()))
+        // get channel from message
+
+        let channel = db
+            .query(format!(
+                "SELECT out.id as id, out.name as name FROM sent_in_channel WHERE in = messages:{id} PARALLEL",
+                id = self.id()
+            ))
+            .await?
+            .take(0);
+
+        let channel: Option<Channel> = channel?;
+
+        let new_message = Message::new(content)
+            .send(
+                UserId::from_inner_id(user_id),
+                channel.ok_or_eyre("Channel not found")?,
+            )
             .await?;
 
         db.query(format!(
@@ -394,8 +408,19 @@ impl Channel {
     #[tracing::instrument]
     pub async fn delete(self) -> Result<()> {
         let db = DB.clone();
-        info!("Deleting messages in channel: {:?}", self);
+        info!("Deleting messages in channel");
         let channel_id = self.id.0.id.to_string();
+
+        info!("Deleting channel");
+
+        let _result: Self = db
+            .delete(("channels", self.clone().id.0.id))
+            .await?
+            .ok_or_eyre("Unable to delete channel")?;
+
+        info!("Channel deleted");
+
+        info!("Cleaning up messages in channel");
 
         tracing::span!(tracing::Level::INFO, "delete_messages", channel = %self.id())
             .in_scope(|| async move {
@@ -410,12 +435,6 @@ impl Channel {
             })
             .await;
 
-        info!("Deleting channel: {:?}", self.clone());
-
-        db.delete(("channels", self.id()))
-            .await?
-            .ok_or_eyre("Channel not found")?;
-
         Ok(())
     }
 
@@ -425,13 +444,17 @@ impl Channel {
 
         let mut result = db
             .query(format!(
-                "SELECT * FROM messages WHERE channel.id = channels:{id}",
+                r#"
+                SELECT in.content as content, in.id as id FROM sent_in_channel WHERE out = channels:{id}
+                "#,
                 id = self.id()
             ))
             .bind(("id", self.id()))
             .await?;
 
         debug!("Messages: {:?}", result);
+
+        // let data = result.take(0)?;
 
         Ok(result.take(0)?)
     }

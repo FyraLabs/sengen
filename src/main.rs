@@ -1,3 +1,5 @@
+use tracing::debug;
+
 use crate::db::{Channel, Message, User};
 mod db;
 mod dbconn;
@@ -26,8 +28,8 @@ async fn main() -> color_eyre::Result<()> {
 
     println!("{:?}", user);
 
-    let msg = Message::new("Hello World!".to_string(), &channel)
-        .send(user.id.clone())
+    let msg = Message::new("Hello World!".to_string())
+        .send(user.id.clone(), channel.clone())
         .await?;
 
     println!("{:?}", msg);
@@ -39,10 +41,11 @@ async fn main() -> color_eyre::Result<()> {
     msg.reply(user.id(), "Hello world to you too!".to_string())
         .await?;
 
- 
     let messages = channel.get_messages().await?;
 
-    println!("{:?}", messages);
+    debug!("{:?}", messages);
+
+    // channel.delete().await?;
 
     Ok(())
 }
